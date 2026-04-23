@@ -533,8 +533,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid">
-        <section className="card">
+      <div className="layoutStack">
+        <section className="card reportSelectorCard">
           <div className="sectionTitle">Отчеты</div>
 
           <div className="col">
