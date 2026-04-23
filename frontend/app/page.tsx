@@ -493,10 +493,7 @@ export default function HomePage() {
 
       const nextReports = reports.filter((item) => item.id !== reportId);
       setReports(nextReports);
-      setSelectedReportId((prev) => {
-        if (prev !== reportId) return prev;
-        return nextReports[0]?.id ?? null;
-      });
+      setSelectedReportId((prev) => (prev === reportId ? null : prev));
     } catch {
       // Silent fail: notifications are disabled by design.
     } finally {
@@ -536,53 +533,52 @@ export default function HomePage() {
       </div>
 
       <div className="layoutStack">
-        <section className="card reportSelectorCard">
-          <div className="sectionTitle">Отчеты</div>
+        <div className="topGrid">
+          <section className="card reportSelectorCard">
+            <div className="sectionTitle">Отчеты</div>
 
-          <div className="col">
-            <input
-              className="input"
-              placeholder="Введите название нового отчета"
-              value={newReportTitle}
-              onChange={(e) => setNewReportTitle(e.target.value)}
-            />
-            <button
-              className="buttonPrimary"
-              onClick={() => void handleCreateReport()}
-              disabled={isBusy || !newReportTitle.trim()}
-            >
-              Создать отчет
-            </button>
-          </div>
+            <div className="col">
+              <input
+                className="input"
+                placeholder="Введите название нового отчета"
+                value={newReportTitle}
+                onChange={(e) => setNewReportTitle(e.target.value)}
+              />
+              <button
+                className="buttonPrimary"
+                onClick={() => void handleCreateReport()}
+                disabled={isBusy || !newReportTitle.trim()}
+              >
+                Создать отчет
+              </button>
+            </div>
 
-          <div className="divider" />
+            <div className="divider" />
 
-          <div className="col">
-            <div className="muted">Выбор отчета</div>
-            <select
-              className="input"
-              value={selectedReportId ?? ""}
-              onChange={(e) => setSelectedReportId(e.target.value ? Number(e.target.value) : null)}
-              disabled={!hasReports}
-            >
-              <option value="" disabled>
-                {hasReports ? "Выберите отчет" : "Нет отчетов"}
-              </option>
-              {reports.map((report) => (
-                <option key={report.id} value={report.id}>
-                  {`${report.title} · ID ${report.id} · ${formatUtcPlus3(report.created_at)}`}
+            <div className="col">
+              <div className="muted">Выбор отчета</div>
+              <select
+                className="input"
+                value={selectedReportId ?? ""}
+                onChange={(e) => setSelectedReportId(e.target.value ? Number(e.target.value) : null)}
+                disabled={!hasReports}
+              >
+                <option value="" disabled>
+                  {hasReports ? "Выберите отчет" : "Нет отчетов"}
                 </option>
-              ))}
-            </select>
-          </div>
-        </section>
+                {reports.map((report) => (
+                  <option key={report.id} value={report.id}>
+                    {`${report.title} · ID ${report.id} · ${formatUtcPlus3(report.created_at)}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </section>
 
-        <section className="col" style={{ gap: 20 }}>
-          {selectedReport ? (
-            <>
-              <div className="card">
-                <div className="sectionTitle">Выбранный отчет</div>
-
+          <section className="card">
+            <div className="sectionTitle">Выбранный отчет</div>
+            {selectedReport ? (
+              <>
                 <div className="kv">
                   <div>Номер отчета</div>
                   <div>{selectedReport.id}</div>
@@ -618,9 +614,16 @@ export default function HomePage() {
                     Удалить отчет
                   </button>
                 </div>
-              </div>
+              </>
+            ) : (
+              <div className="muted">Отчет не выбран.</div>
+            )}
+          </section>
+        </div>
 
-              <div className="card">
+        {selectedReport ? (
+          <section className="col" style={{ gap: 20 }}>
+            <div className="card">
                 <div className="sectionTitle">Добавить устройство</div>
 
                 <div className="deviceSelect">
@@ -662,7 +665,7 @@ export default function HomePage() {
                 <div className="divider" />
               </div>
 
-              <div className="card">
+            <div className="card">
                 <div className="sectionTitle">Устройства в отчете</div>
 
                 {selectedReport.devices.length === 0 ? (
@@ -697,7 +700,7 @@ export default function HomePage() {
                 )}
               </div>
 
-              <div className="card">
+            <div className="card">
                 <div className="actions">
                   <button
                     className="buttonPrimary"
@@ -709,7 +712,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="card">
+            <div className="card">
                 <div className="sectionTitle">Результаты расчета</div>
 
                 {selectedReport.lines.length === 0 ? (
@@ -754,14 +757,9 @@ export default function HomePage() {
                     </table>
                   </div>
                 )}
-              </div>
-            </>
-          ) : (
-            <div className="card">
-              <div className="muted">Отчет не выбран.</div>
             </div>
-          )}
-        </section>
+          </section>
+        ) : null}
       </div>
       {pendingDeleteReport ? (
         <div

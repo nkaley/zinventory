@@ -127,5 +127,5 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
     wb.save(output)
     output.seek(0)
 
-    filename = f"{report.id}_{_safe_filename(report.title)}.xlsx"
+    filename = f"{_safe_filename(report.title)}.xlsx"
     return output, filename
