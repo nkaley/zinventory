@@ -390,6 +390,8 @@ export default function HomePage() {
             : report
         )
       );
+      setSearch("");
+      setSearchResults([]);
     } catch {
       // Silent fail: notifications are disabled by design.
     } finally {
