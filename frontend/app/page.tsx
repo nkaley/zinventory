@@ -567,6 +567,7 @@ export default function HomePage() {
                   <div><strong>{report.title}</strong></div>
                   <div className="muted">ID: {report.id}</div>
                   <div className="muted">Статус: {report.status}</div>
+                  <div className="muted">Создан: {formatUtcPlus3(report.created_at)}</div>
                   <div className="muted">Сумма: {report.total_cost}</div>
                 </button>
               ))
@@ -591,6 +592,9 @@ export default function HomePage() {
 
                   <div>Статус</div>
                   <div><span className="badge">{formatReportStatus(selectedReport.status)}</span></div>
+
+                  <div>Дата создания</div>
+                  <div>{formatUtcPlus3(selectedReport.created_at)}</div>
 
                   <div>Итоговая сумма (руб.)</div>
                   <div><strong>{formatRub(selectedReport.total_cost)}</strong></div>
