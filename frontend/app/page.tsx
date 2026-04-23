@@ -555,25 +555,23 @@ export default function HomePage() {
 
           <div className="divider" />
 
-          <div className="reportList">
-            {hasReports ? (
-              reports.map((report) => (
-                <button
-                  key={report.id}
-                  className={`reportItem ${selectedReportId === report.id ? "reportItemActive" : ""}`}
-                  onClick={() => setSelectedReportId(report.id)}
-                  style={{ textAlign: "left" }}
-                >
-                  <div><strong>{report.title}</strong></div>
-                  <div className="muted">ID: {report.id}</div>
-                  <div className="muted">Статус: {report.status}</div>
-                  <div className="muted">Создан: {formatUtcPlus3(report.created_at)}</div>
-                  <div className="muted">Сумма: {report.total_cost}</div>
-                </button>
-              ))
-            ) : (
-              <div className="muted">Нет отчетов.</div>
-            )}
+          <div className="col">
+            <div className="muted">Выбор отчета</div>
+            <select
+              className="input"
+              value={selectedReportId ?? ""}
+              onChange={(e) => setSelectedReportId(e.target.value ? Number(e.target.value) : null)}
+              disabled={!hasReports}
+            >
+              <option value="" disabled>
+                {hasReports ? "Выберите отчет" : "Нет отчетов"}
+              </option>
+              {reports.map((report) => (
+                <option key={report.id} value={report.id}>
+                  {`${report.title} · ID ${report.id} · ${formatUtcPlus3(report.created_at)}`}
+                </option>
+              ))}
+            </select>
           </div>
         </section>
 
