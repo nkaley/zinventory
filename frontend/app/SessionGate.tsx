@@ -360,10 +360,7 @@ export default function SessionGate({ children }: { children: React.ReactNode })
         {status === "idle" ? (
           <>
             <h3 className="modalTitle">Сессия завершена</h3>
-            <p className="modalText">
-              Сессия закрыта из-за бездействия (более 10 минут без активности). Это нужно, чтобы другие
-              пользователи могли работать с системой.
-            </p>
+            <p className="modalText">Сессия закрыта из-за бездействия.</p>
             <div className="modalActions">
               <button
                 type="button"
