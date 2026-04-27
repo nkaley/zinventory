@@ -1,6 +1,8 @@
 import "./globals.css";
 import type { Metadata } from "next";
 
+import SessionGate from "./SessionGate";
+
 export const metadata: Metadata = {
   title: "Zinventory",
   description: "Zinventory frontend",
@@ -13,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <body>{children}</body>
+      <body>
+        <SessionGate>{children}</SessionGate>
+      </body>
     </html>
   );
 }

@@ -157,3 +157,17 @@ class PaginatedCompositesResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class SessionAcquireRequest(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+
+
+class SessionReleaseRequest(BaseModel):
+    session_id: str = Field(min_length=8, max_length=128)
+
+
+class SessionLockResponse(BaseModel):
+    session_id: str
+    expires_at: datetime
+    ttl_seconds: int = 60

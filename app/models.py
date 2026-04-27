@@ -195,3 +195,21 @@ class CompositeItemComponent(Base):
     )
 
     composite_item: Mapped["CompositeItem"] = relationship("CompositeItem", back_populates="components")
+
+
+class ActiveSessionLock(Base):
+    __tablename__ = "active_session_locks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    lock_name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, default="global")
+    session_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    acquired_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
