@@ -45,6 +45,12 @@
   gap: 6px;
 }
 
+.topBarButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .lastSyncText {
   font-size: 13px;
   color: #475569;

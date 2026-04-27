@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { useSession } from "./SessionGate";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 type ReportDevice = {
@@ -202,6 +204,7 @@ function ExpandableRelatedComposite({ value }: { value: string | null }) {
 }
 
 export default function HomePage() {
+  const { logout } = useSession();
   const [reports, setReports] = useState<Report[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [newReportTitle, setNewReportTitle] = useState("");
@@ -517,13 +520,22 @@ export default function HomePage() {
       <div className="topBar">
         <div className="title">Zinventory</div>
         <div className="topBarActions">
-          <button
-            className="buttonSync"
-            onClick={() => void handleFullSync()}
-            disabled={syncing}
-          >
-            {syncing ? "Обновление..." : "Обновить базу"}
-          </button>
+          <div className="topBarButtons">
+            <button
+              className="buttonSecondary"
+              onClick={logout}
+              disabled={syncing}
+            >
+              Выйти
+            </button>
+            <button
+              className="buttonSync"
+              onClick={() => void handleFullSync()}
+              disabled={syncing}
+            >
+              {syncing ? "Обновление..." : "Обновить базу"}
+            </button>
+          </div>
           <div className="lastSyncText">
             {lastSyncAt
               ? `Последнее обновление: ${formatUtcPlus3(lastSyncAt)} (UTC+3)`

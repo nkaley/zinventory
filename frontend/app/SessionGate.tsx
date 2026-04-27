@@ -1,13 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const SESSION_STORAGE_KEY = "zinventory_session_id";
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const RETRY_INTERVAL_MS = 5_000;
+const IDLE_LIMIT_MS = 10 * 60 * 1000;
 
-type GateStatus = "loading" | "ok" | "blocked" | "error";
+type GateStatus = "loading" | "ok" | "blocked" | "error" | "idle" | "logged_out";
+
+type SessionContextValue = {
+  logout: () => void;
+};
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+
+export function useSession(): SessionContextValue {
+  const ctx = useContext(SessionContext);
+  if (!ctx) {
+    throw new Error("useSession must be used within <SessionGate>");
+  }
+  return ctx;
+}
 
 function generateSessionId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -25,7 +47,6 @@ function getOrCreateSessionId(): string {
     window.localStorage.setItem(SESSION_STORAGE_KEY, fresh);
     return fresh;
   } catch {
-    // localStorage unavailable; fall back to in-memory id (won't survive reload)
     return generateSessionId();
   }
 }
@@ -38,12 +59,143 @@ function resolveUrlString(input: RequestInfo | URL): string {
 
 export default function SessionGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<GateStatus>("loading");
+
   const sessionIdRef = useRef<string>("");
   const heartbeatTimerRef = useRef<number | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const acquireInFlightRef = useRef<boolean>(false);
+  const lastActivityRef = useRef<number>(Date.now());
 
-  // Initialize session id and patch fetch as soon as possible on the client.
+  const clearRetry = useCallback(() => {
+    if (retryTimerRef.current != null) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current != null) {
+      window.clearInterval(heartbeatTimerRef.current);
+      heartbeatTimerRef.current = null;
+    }
+  }, []);
+
+  const releaseLockRequest = useCallback(async (): Promise<void> => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
+    try {
+      await fetch(`${API_BASE}/session/release`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Session-Id": sessionId,
+        },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+    } catch {
+      // The lock will eventually expire by TTL anyway.
+    }
+  }, []);
+
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current != null) return;
+    heartbeatTimerRef.current = window.setInterval(() => {
+      void heartbeatTick();
+    }, HEARTBEAT_INTERVAL_MS);
+
+    async function heartbeatTick(): Promise<void> {
+      if (Date.now() - lastActivityRef.current > IDLE_LIMIT_MS) {
+        clearHeartbeat();
+        clearRetry();
+        await releaseLockRequest();
+        setStatus("idle");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/session/acquire`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionIdRef.current }),
+        });
+
+        if (response.status === 423) {
+          clearHeartbeat();
+          setStatus("blocked");
+          retryTimerRef.current = window.setTimeout(() => {
+            void acquire();
+          }, RETRY_INTERVAL_MS);
+        }
+      } catch {
+        // Transient error: next tick will retry.
+      }
+    }
+  }, [clearHeartbeat, clearRetry, releaseLockRequest]);
+
+  const acquire = useCallback(async (): Promise<void> => {
+    if (acquireInFlightRef.current) return;
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = getOrCreateSessionId();
+    }
+    acquireInFlightRef.current = true;
+
+    try {
+      const response = await fetch(`${API_BASE}/session/acquire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionIdRef.current }),
+      });
+
+      if (response.status === 423) {
+        clearHeartbeat();
+        setStatus("blocked");
+        clearRetry();
+        retryTimerRef.current = window.setTimeout(() => {
+          void acquire();
+        }, RETRY_INTERVAL_MS);
+        return;
+      }
+
+      if (!response.ok) {
+        clearHeartbeat();
+        setStatus("error");
+        clearRetry();
+        retryTimerRef.current = window.setTimeout(() => {
+          void acquire();
+        }, RETRY_INTERVAL_MS);
+        return;
+      }
+
+      lastActivityRef.current = Date.now();
+      setStatus("ok");
+      clearRetry();
+      startHeartbeat();
+    } catch {
+      clearHeartbeat();
+      setStatus("error");
+      clearRetry();
+      retryTimerRef.current = window.setTimeout(() => {
+        void acquire();
+      }, RETRY_INTERVAL_MS);
+    } finally {
+      acquireInFlightRef.current = false;
+    }
+  }, [clearHeartbeat, clearRetry, startHeartbeat]);
+
+  const logout = useCallback(async () => {
+    clearHeartbeat();
+    clearRetry();
+    setStatus("logged_out");
+    await releaseLockRequest();
+  }, [clearHeartbeat, clearRetry, releaseLockRequest]);
+
+  const loginAgain = useCallback(async () => {
+    lastActivityRef.current = Date.now();
+    setStatus("loading");
+    await acquire();
+  }, [acquire]);
+
+  // Patch window.fetch on mount so every API request includes X-Session-Id.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -67,7 +219,7 @@ export default function SessionGate({ children }: { children: React.ReactNode })
           return originalFetch(input, { ...(init ?? {}), headers });
         }
       } catch {
-        // Fall through to original fetch on any header-handling failure.
+        // Fall through to original fetch.
       }
       return originalFetch(input, init);
     };
@@ -79,102 +231,45 @@ export default function SessionGate({ children }: { children: React.ReactNode })
     };
   }, []);
 
-  // Acquire the lock on mount and keep it alive with heartbeats.
+  // Activity tracking for idle timeout.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let cancelled = false;
+    const onActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
 
-    function clearRetry(): void {
-      if (retryTimerRef.current != null) {
-        window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = null;
-      }
+    const events: Array<keyof WindowEventMap> = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "focus",
+    ];
+
+    for (const event of events) {
+      window.addEventListener(event, onActivity, { passive: true } as AddEventListenerOptions);
     }
-
-    function clearHeartbeat(): void {
-      if (heartbeatTimerRef.current != null) {
-        window.clearInterval(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = null;
-      }
-    }
-
-    function scheduleRetry(): void {
-      clearRetry();
-      retryTimerRef.current = window.setTimeout(() => {
-        void acquire();
-      }, RETRY_INTERVAL_MS);
-    }
-
-    async function acquire(): Promise<void> {
-      if (cancelled) return;
-      if (acquireInFlightRef.current) return;
-      acquireInFlightRef.current = true;
-      try {
-        const response = await fetch(`${API_BASE}/session/acquire`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionIdRef.current }),
-        });
-
-        if (cancelled) return;
-
-        if (response.status === 423) {
-          setStatus("blocked");
-          scheduleRetry();
-          return;
-        }
-
-        if (!response.ok) {
-          setStatus("error");
-          scheduleRetry();
-          return;
-        }
-
-        setStatus("ok");
-        clearRetry();
-        if (heartbeatTimerRef.current == null) {
-          heartbeatTimerRef.current = window.setInterval(() => {
-            void heartbeat();
-          }, HEARTBEAT_INTERVAL_MS);
-        }
-      } catch {
-        if (cancelled) return;
-        setStatus("error");
-        scheduleRetry();
-      } finally {
-        acquireInFlightRef.current = false;
-      }
-    }
-
-    async function heartbeat(): Promise<void> {
-      try {
-        const response = await fetch(`${API_BASE}/session/acquire`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionIdRef.current }),
-        });
-
-        if (response.status === 423) {
-          setStatus("blocked");
-          clearHeartbeat();
-          scheduleRetry();
-        }
-      } catch {
-        // Network blip during heartbeat is fine — the next one will retry.
-      }
-    }
-
-    void acquire();
 
     return () => {
-      cancelled = true;
-      clearRetry();
-      clearHeartbeat();
+      for (const event of events) {
+        window.removeEventListener(event, onActivity);
+      }
     };
   }, []);
 
-  // Best-effort release when the tab is closed or hidden.
+  // Initial acquire on mount.
+  useEffect(() => {
+    void acquire();
+
+    return () => {
+      clearRetry();
+      clearHeartbeat();
+    };
+  }, [acquire, clearHeartbeat, clearRetry]);
+
+  // Best-effort release when the tab is closed.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -187,11 +282,10 @@ export default function SessionGate({ children }: { children: React.ReactNode })
       try {
         if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
           const blob = new Blob([body], { type: "application/json" });
-          const sent = navigator.sendBeacon(url, blob);
-          if (sent) return;
+          if (navigator.sendBeacon(url, blob)) return;
         }
       } catch {
-        // fall through to keepalive fetch
+        // Fall through to keepalive fetch.
       }
 
       try {
@@ -205,7 +299,7 @@ export default function SessionGate({ children }: { children: React.ReactNode })
           keepalive: true,
         });
       } catch {
-        // ignore — best-effort only; the lock will expire via TTL anyway
+        // Best-effort only.
       }
     }
 
@@ -219,7 +313,11 @@ export default function SessionGate({ children }: { children: React.ReactNode })
   }, []);
 
   if (status === "ok") {
-    return <>{children}</>;
+    return (
+      <SessionContext.Provider value={{ logout: () => void logout() }}>
+        {children}
+      </SessionContext.Provider>
+    );
   }
 
   return (
@@ -238,14 +336,10 @@ export default function SessionGate({ children }: { children: React.ReactNode })
 
         {status === "blocked" ? (
           <>
-            <h3 className="modalTitle">Система занята</h3>
-            <p className="modalText">
-              Сейчас в системе работает другой пользователь. С приложением одновременно может работать
-              только один человек. Попробуем подключиться повторно автоматически.
-            </p>
+            <h3 className="modalTitle">Сессия занята</h3>
+            <p className="modalText">Пробуем подключиться</p>
             <div className="syncProgress">
               <span className="spinner" aria-hidden="true" />
-              <span>Ожидаем освобождения</span>
             </div>
           </>
         ) : null}
@@ -259,6 +353,44 @@ export default function SessionGate({ children }: { children: React.ReactNode })
             <div className="syncProgress">
               <span className="spinner" aria-hidden="true" />
               <span>Повторное подключение</span>
+            </div>
+          </>
+        ) : null}
+
+        {status === "idle" ? (
+          <>
+            <h3 className="modalTitle">Сессия завершена</h3>
+            <p className="modalText">
+              Сессия закрыта из-за бездействия (более 10 минут без активности). Это нужно, чтобы другие
+              пользователи могли работать с системой.
+            </p>
+            <div className="modalActions">
+              <button
+                type="button"
+                className="buttonPrimary"
+                onClick={() => void loginAgain()}
+              >
+                Войти снова
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {status === "logged_out" ? (
+          <>
+            <h3 className="modalTitle">Вы вышли из системы</h3>
+            <p className="modalText">
+              Сессия завершена. Теперь с системой может работать другой пользователь. Вы можете войти
+              повторно в любой момент.
+            </p>
+            <div className="modalActions">
+              <button
+                type="button"
+                className="buttonPrimary"
+                onClick={() => void loginAgain()}
+              >
+                Войти снова
+              </button>
             </div>
           </>
         ) : null}

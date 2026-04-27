@@ -20,18 +20,23 @@
 
 ## Single-active-user lock
 
-Только один пользователь может одновременно работать с приложением.
+Only one user can work with the application at any given time.
 
-- При открытии страницы фронтенд получает/создает локальный `session_id` (UUID) и
-  захватывает глобальный lock через `POST /session/acquire`.
-- Любой запрос к API проходит через middleware, которое требует заголовок
-  `X-Session-Id`. Если активный lock принадлежит другому пользователю — сервер
-  отвечает `423 Locked`, и фронтенд показывает экран «Система занята» с
-  автоматическим повтором.
-- TTL блокировки — 60 секунд. Фронтенд продлевает lock heartbeat-ом раз в 20 секунд
-  и сам пытается отпустить его через `POST /session/release` при закрытии вкладки.
-  Если вкладка/процесс пропадают без штатного выхода, lock освобождается автоматически
-  через TTL.
+- On page load, the frontend gets/creates a local `session_id` (UUID) and acquires a
+  global lock via `POST /session/acquire`.
+- Every API request goes through a middleware that requires the `X-Session-Id`
+  header. If the active lock belongs to a different user, the server responds with
+  `423 Locked` and the frontend shows a "Session busy" screen and retries
+  automatically.
+- Lock TTL is 60 seconds. The frontend keeps the lock alive with a heartbeat every
+  20 seconds and tries to release it via `POST /session/release` when the tab is
+  closed. If the tab/process disappears without a clean exit, the lock is released
+  automatically once the TTL expires.
+- Idle timeout: if the user shows no activity (mouse/keyboard/scroll/click) for more
+  than 10 minutes, the frontend releases the lock itself and shows a "Session ended"
+  screen. The user can return via the "Log in again" button.
+- The "Log out" button in the header releases the lock immediately and shows a
+  "You have logged out" screen.
 
-Пути, доступные без `X-Session-Id`: `/health`, `/session/*`, `/docs`, `/redoc`,
+Paths available without `X-Session-Id`: `/health`, `/session/*`, `/docs`, `/redoc`,
 `/openapi.json`.
