@@ -218,6 +218,7 @@ export default function HomePage() {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [pendingDeleteReport, setPendingDeleteReport] = useState<Report | null>(null);
+  const [forceSyncConfirm, setForceSyncConfirm] = useState(false);
 
   const hasReports = reports.length > 0;
   const isBusy = loading || syncing;
@@ -291,11 +292,12 @@ export default function HomePage() {
     });
   }
 
-  async function handleFullSync(): Promise<void> {
+  async function handleFullSync(force = false): Promise<void> {
     setSyncing(true);
 
     try {
-      const result = await fetchJson<FullSyncResponse>(`${API_BASE}/sync/full`, {
+      const url = force ? `${API_BASE}/sync/full?force=true` : `${API_BASE}/sync/full`;
+      const result = await fetchJson<FullSyncResponse>(url, {
         method: "POST",
       });
       const nowIso = new Date().toISOString();
@@ -530,8 +532,16 @@ export default function HomePage() {
               Выйти
             </button>
             <button
+              className="buttonSecondary"
+              onClick={() => setForceSyncConfirm(true)}
+              disabled={syncing}
+              title="Перевыкачать все детали композитов из Zoho. Использует много API-токенов."
+            >
+              Полная синхронизация
+            </button>
+            <button
               className="buttonSync"
-              onClick={() => void handleFullSync()}
+              onClick={() => void handleFullSync(false)}
               disabled={syncing}
             >
               {syncing ? "Обновление..." : "Обновить базу"}
@@ -836,6 +846,47 @@ export default function HomePage() {
             <div className="syncProgress">
               <span className="spinner" aria-hidden="true" />
               <span>Обновляем данные...</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {forceSyncConfirm ? (
+        <div
+          className="modalOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="force-sync-title"
+        >
+          <div className="modalCard">
+            <h3 id="force-sync-title" className="modalTitle">
+              Полная синхронизация
+            </h3>
+            <p className="modalText">
+              Перевыкачает детали всех комплектов из Zoho, даже если они не менялись.
+              Тратит много API-токенов (примерно по одному на каждый комплект).
+              Используйте, только если данные в локальной базе расходятся с Zoho.
+            </p>
+            <div className="modalActions">
+              <button
+                type="button"
+                className="buttonSecondary"
+                onClick={() => setForceSyncConfirm(false)}
+                disabled={syncing}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="buttonPrimary"
+                onClick={() => {
+                  setForceSyncConfirm(false);
+                  void handleFullSync(true);
+                }}
+                disabled={syncing}
+              >
+                Запустить
+              </button>
             </div>
           </div>
         </div>

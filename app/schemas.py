@@ -14,6 +14,9 @@ class SyncResult(BaseModel):
     fetched_composites: int | None = None
     inserted_composites: int | None = None
     inserted_components: int | None = None
+    skipped_composites: int | None = None
+    deleted_composites: int | None = None
+    detail_calls: int | None = None
 
 
 class FullSyncResult(BaseModel):

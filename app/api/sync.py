@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,19 +20,25 @@ def sync_items_endpoint(db: Session = Depends(get_db)) -> SyncResult:
 
 
 @router.post("/composites", response_model=SyncResult)
-def sync_composites_endpoint(db: Session = Depends(get_db)) -> SyncResult:
+def sync_composites_endpoint(
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> SyncResult:
     try:
-        result = sync_composites(db)
+        result = sync_composites(db, force=force)
         return SyncResult(**result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Composites sync failed: {exc}") from exc
 
 
 @router.post("/full", response_model=FullSyncResult)
-def sync_full_endpoint(db: Session = Depends(get_db)) -> FullSyncResult:
+def sync_full_endpoint(
+    force: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> FullSyncResult:
     try:
         items_result = sync_items(db)
-        composites_result = sync_composites(db)
+        composites_result = sync_composites(db, force=force)
 
         return FullSyncResult(
             items=SyncResult(**items_result),
