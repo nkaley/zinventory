@@ -342,6 +342,29 @@ button:disabled {
 .searchHint {
   padding: 8px 4px 2px;
 }
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px 2px;
+  font-size: 14px;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+}
+
+.inactiveBadge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle;
+}
   
   .badge {
     display: inline-block;

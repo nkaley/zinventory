@@ -209,6 +209,7 @@ export default function HomePage() {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [newReportTitle, setNewReportTitle] = useState("");
   const [search, setSearch] = useState("");
+  const [includeInactive, setIncludeInactive] = useState(false);
   const [searchResults, setSearchResults] = useState<CompositeItem[]>([]);
   const [deviceQtyDrafts, setDeviceQtyDrafts] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(false);
@@ -328,7 +329,7 @@ export default function HomePage() {
     }
   }
 
-  async function searchComposites(query: string): Promise<void> {
+  async function searchComposites(query: string, includeInactiveParam: boolean): Promise<void> {
     if (!query.trim()) {
       setSearchResults([]);
       return;
@@ -338,7 +339,7 @@ export default function HomePage() {
 
     try {
       const data = await fetchJson<CompositeSearchResponse>(
-        `${API_BASE}/catalog/composites?q=${encodeURIComponent(query)}&limit=20&offset=0`
+        `${API_BASE}/catalog/composites?q=${encodeURIComponent(query)}&limit=20&offset=0&include_inactive=${includeInactiveParam}`
       );
       setSearchResults(data.items);
     } catch {
@@ -356,11 +357,11 @@ export default function HomePage() {
     }
 
     const timeoutId = window.setTimeout(() => {
-      void searchComposites(query);
+      void searchComposites(query, includeInactive);
     }, 300);
 
     return () => window.clearTimeout(timeoutId);
-  }, [search]);
+  }, [search, includeInactive]);
 
   async function handleAddDevice(item: CompositeItem): Promise<void> {
     if (!selectedReport) return;
@@ -647,6 +648,15 @@ export default function HomePage() {
                       onChange={(e) => setSearch(e.target.value)}
                     />
 
+                    <label className="checkboxRow">
+                      <input
+                        type="checkbox"
+                        checked={includeInactive}
+                        onChange={(e) => setIncludeInactive(e.target.checked)}
+                      />
+                      <span>Показывать неактивные</span>
+                    </label>
+
                     {searchLoading ? <div className="muted searchHint">Поиск...</div> : null}
 
                     {search.trim() && !searchLoading && searchResults.length === 0 ? (
@@ -663,7 +673,12 @@ export default function HomePage() {
                             disabled={addingDevice}
                             onClick={() => void handleAddDevice(item)}
                           >
-                            <div><strong>{item.name}</strong></div>
+                            <div>
+                              <strong>{item.name}</strong>
+                              {!item.is_active ? (
+                                <span className="inactiveBadge">неактивен</span>
+                              ) : null}
+                            </div>
                             <div className="muted">
                               {item.sku ?? "—"} · {item.zoho_composite_item_id}
                             </div>

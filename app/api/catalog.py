@@ -69,9 +69,12 @@ def list_composites(
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     include_components: bool = Query(default=False),
+    include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> PaginatedCompositesResponse:
     filters = []
+    if not include_inactive:
+        filters.append(CompositeItem.is_active.is_(True))
     if q:
         pattern = f"%{q.strip()}%"
         filters.append(
