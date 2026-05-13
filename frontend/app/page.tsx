@@ -112,6 +112,29 @@ function formatUtcPlus3(dateIso: string): string {
   }).format(date);
 }
 
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const star = header.match(/filename\*=UTF-8''([^;\n]+)/i);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim().replace(/^"(.*)"$/, "$1"));
+    } catch {
+      return star[1].trim();
+    }
+  }
+  const quoted = header.match(/filename="([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const bare = header.match(/filename=([^;\s]+)/i);
+  if (bare?.[1]) return bare[1].replace(/^"(.*)"$/, "$1");
+  return null;
+}
+
+function fileBasename(name: string): string {
+  const trimmed = name.trim();
+  const base = trimmed.replace(/^.*[/\\]/, "");
+  return base || trimmed;
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -219,6 +242,7 @@ export default function HomePage() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [pendingDeleteReport, setPendingDeleteReport] = useState<Report | null>(null);
   const [forceSyncConfirm, setForceSyncConfirm] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const hasReports = reports.length > 0;
   const isBusy = loading || syncing;
@@ -513,9 +537,33 @@ export default function HomePage() {
     setPendingDeleteReport(report);
   }
 
-  function handleExport(): void {
+  async function handleExport(): Promise<void> {
     if (!selectedReport) return;
-    window.open(`${API_BASE}/reports/${selectedReport.id}/export/xlsx`, "_blank");
+    setExporting(true);
+    try {
+      const response = await fetch(`${API_BASE}/reports/${selectedReport.id}/export/xlsx`);
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const fromHeader = filenameFromContentDisposition(
+        response.headers.get("Content-Disposition")
+      );
+      const downloadName = fileBasename(
+        fromHeader ?? `report-${selectedReport.id}.xlsx`
+      );
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = downloadName;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      // Silent fail: notifications are disabled by design.
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -624,10 +672,10 @@ export default function HomePage() {
                 <div className="actions">
                   <button
                     className="buttonSecondary"
-                    onClick={handleExport}
-                    disabled={isBusy}
+                    onClick={() => void handleExport()}
+                    disabled={isBusy || exporting}
                   >
-                    Экспорт в XLSX
+                    {exporting ? "Экспорт…" : "Экспорт в XLSX"}
                   </button>
                   <button
                     className="buttonDanger"
