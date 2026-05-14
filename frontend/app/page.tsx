@@ -77,6 +77,45 @@ type LastSyncResponse = {
   last_full_sync_at: string | null;
 };
 
+type CompositeCostChange = {
+  composite_id: string;
+  name: string;
+  sku: string | null;
+  current_purchase_rate: number;
+  new_purchase_rate: number;
+  delta: number;
+};
+
+type CompositeCostSkipped = {
+  composite_id: string;
+  name: string;
+  sku: string | null;
+  current_purchase_rate: number;
+  computed_purchase_rate: number;
+  reason: string;
+};
+
+type CompositeCostError = {
+  composite_id: string;
+  name: string;
+  sku: string | null;
+  current_purchase_rate: number | null;
+  new_purchase_rate: number | null;
+  delta: number | null;
+  error: string;
+};
+
+type CompositeCostRecalcResult = {
+  dry_run: boolean;
+  threshold: number;
+  checked: number;
+  skipped_no_change: number;
+  to_update: CompositeCostChange[];
+  skipped_unreliable: CompositeCostSkipped[];
+  updated: CompositeCostChange[];
+  errors: CompositeCostError[];
+};
+
 function formatRub(value: string | number): string {
   const num = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(num)) return "—";
@@ -244,9 +283,14 @@ export default function HomePage() {
   const [pendingDeleteReport, setPendingDeleteReport] = useState<Report | null>(null);
   const [forceSyncConfirm, setForceSyncConfirm] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [costRecalcLoading, setCostRecalcLoading] = useState(false);
+  const [costRecalcResult, setCostRecalcResult] =
+    useState<CompositeCostRecalcResult | null>(null);
+  const [applyCostsConfirm, setApplyCostsConfirm] = useState(false);
 
   const hasReports = reports.length > 0;
   const isBusy = loading || syncing;
+  const isCostRecalcBusy = costRecalcLoading;
 
   const selectedReport = useMemo(
     () => reports.find((r) => r.id === selectedReportId) ?? null,
@@ -331,6 +375,23 @@ export default function HomePage() {
       // Silent fail: notifications are disabled by design.
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleRecalcCosts(dryRun: boolean): Promise<void> {
+    setCostRecalcLoading(true);
+    try {
+      const url = `${API_BASE}/catalog/composites/recalculate-costs?dry_run=${
+        dryRun ? "true" : "false"
+      }`;
+      const result = await fetchJson<CompositeCostRecalcResult>(url, {
+        method: "POST",
+      });
+      setCostRecalcResult(result);
+    } catch {
+      // Silent fail: notifications are disabled by design.
+    } finally {
+      setCostRecalcLoading(false);
     }
   }
 
@@ -579,6 +640,22 @@ export default function HomePage() {
               disabled={syncing}
             >
               Выйти
+            </button>
+            <button
+              className="buttonSecondary"
+              onClick={() => void handleRecalcCosts(true)}
+              disabled={syncing || isCostRecalcBusy}
+              title="Сравнить текущий purchase_rate сборок в Zoho с расчетом из локальной БД, ничего не меняя."
+            >
+              {isCostRecalcBusy ? "Подсчет..." : "Себестоимость: предпросмотр"}
+            </button>
+            <button
+              className="buttonSecondary"
+              onClick={() => setApplyCostsConfirm(true)}
+              disabled={syncing || isCostRecalcBusy}
+              title="Записать новый purchase_rate в Zoho для всех сборок, где себестоимость изменилась."
+            >
+              Себестоимость: обновить в Zoho
             </button>
             <button
               className="buttonSecondary"
@@ -938,6 +1015,242 @@ export default function HomePage() {
                 disabled={syncing}
               >
                 Запустить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {applyCostsConfirm ? (
+        <div
+          className="modalOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="apply-costs-title"
+        >
+          <div className="modalCard">
+            <h3 id="apply-costs-title" className="modalTitle">
+              Обновить себестоимость в Zoho
+            </h3>
+            <p className="modalText">
+              Для каждой активной сборки будет посчитана новая себестоимость из
+              локальной БД и записана в Zoho как <code>purchase_rate</code>.
+              Сборки с нулевой ценой компонента или пустым составом будут
+              пропущены. Операция использует Zoho API (2 запроса на сборку) и
+              может занять несколько минут.
+            </p>
+            <p className="modalText">
+              Перед запуском рекомендуется проверить «Себестоимость: предпросмотр».
+            </p>
+            <div className="modalActions">
+              <button
+                type="button"
+                className="buttonSecondary"
+                onClick={() => setApplyCostsConfirm(false)}
+                disabled={isCostRecalcBusy}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="buttonPrimary"
+                onClick={() => {
+                  setApplyCostsConfirm(false);
+                  void handleRecalcCosts(false);
+                }}
+                disabled={isCostRecalcBusy}
+              >
+                Обновить
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isCostRecalcBusy ? (
+        <div
+          className="modalOverlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-live="assertive"
+        >
+          <div className="modalCard">
+            <h3 className="modalTitle">Пересчет себестоимости сборок</h3>
+            <p className="modalText">
+              Идет расчет и/или запись в Zoho. Пожалуйста, не закрывайте
+              страницу.
+            </p>
+            <div className="syncProgress">
+              <span className="spinner" aria-hidden="true" />
+              <span>Обрабатываем сборки...</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {costRecalcResult ? (
+        <div
+          className="modalOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cost-recalc-title"
+        >
+          <div className="modalCard modalCardWide">
+            <h3 id="cost-recalc-title" className="modalTitle">
+              {costRecalcResult.dry_run
+                ? "Предпросмотр себестоимости сборок"
+                : "Результат обновления в Zoho"}
+            </h3>
+            <p className="modalText">
+              Проверено: <strong>{costRecalcResult.checked}</strong>. Без
+              изменений: <strong>{costRecalcResult.skipped_no_change}</strong>.
+              К обновлению:{" "}
+              <strong>{costRecalcResult.to_update.length}</strong>.
+              {costRecalcResult.dry_run
+                ? null
+                : ` Обновлено в Zoho: ${costRecalcResult.updated.length}.`}
+              {costRecalcResult.errors.length > 0
+                ? ` Ошибок: ${costRecalcResult.errors.length}.`
+                : null}
+              {costRecalcResult.skipped_unreliable.length > 0
+                ? ` Пропущено (нет цены / пустой состав): ${costRecalcResult.skipped_unreliable.length}.`
+                : null}
+            </p>
+
+            {costRecalcResult.to_update.length > 0 ? (
+              <div className="recalcSection">
+                <div className="recalcSectionTitle">
+                  {costRecalcResult.dry_run
+                    ? "Будут обновлены"
+                    : "Запланировано к обновлению"}
+                </div>
+                <div className="recalcTableWrap">
+                  <table className="recalcTable">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Название</th>
+                        <th className="num">Сейчас</th>
+                        <th className="num">Новая</th>
+                        <th className="num">Δ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costRecalcResult.to_update.map((row) => (
+                        <tr key={row.composite_id}>
+                          <td>{row.sku ?? "—"}</td>
+                          <td>{row.name}</td>
+                          <td className="num">
+                            {formatRub(row.current_purchase_rate)}
+                          </td>
+                          <td className="num">
+                            {formatRub(row.new_purchase_rate)}
+                          </td>
+                          <td className="num">{formatRub(row.delta)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {!costRecalcResult.dry_run &&
+            costRecalcResult.updated.length > 0 ? (
+              <div className="recalcSection">
+                <div className="recalcSectionTitle">Успешно обновлено</div>
+                <div className="recalcTableWrap">
+                  <table className="recalcTable">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Название</th>
+                        <th className="num">Новая</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costRecalcResult.updated.map((row) => (
+                        <tr key={row.composite_id}>
+                          <td>{row.sku ?? "—"}</td>
+                          <td>{row.name}</td>
+                          <td className="num">
+                            {formatRub(row.new_purchase_rate)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {costRecalcResult.skipped_unreliable.length > 0 ? (
+              <div className="recalcSection">
+                <div className="recalcSectionTitle">
+                  Пропущены (нет цены / пустой состав)
+                </div>
+                <div className="recalcTableWrap">
+                  <table className="recalcTable">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Название</th>
+                        <th>Причина</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costRecalcResult.skipped_unreliable.map((row) => (
+                        <tr key={row.composite_id}>
+                          <td>{row.sku ?? "—"}</td>
+                          <td>{row.name}</td>
+                          <td>
+                            {row.reason === "zero_rate_leaf"
+                              ? "у компонента нулевая цена"
+                              : row.reason === "empty_bom"
+                              ? "пустой состав"
+                              : row.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            {costRecalcResult.errors.length > 0 ? (
+              <div className="recalcSection">
+                <div className="recalcSectionTitle">Ошибки</div>
+                <div className="recalcTableWrap">
+                  <table className="recalcTable">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Название</th>
+                        <th>Ошибка</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {costRecalcResult.errors.map((row) => (
+                        <tr key={row.composite_id}>
+                          <td>{row.sku ?? "—"}</td>
+                          <td>{row.name}</td>
+                          <td>{row.error}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="modalActions">
+              <button
+                type="button"
+                className="buttonPrimary"
+                onClick={() => setCostRecalcResult(null)}
+              >
+                Закрыть
               </button>
             </div>
           </div>

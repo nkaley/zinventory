@@ -457,6 +457,58 @@ button:disabled {
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.25);
 }
 
+.modalCardWide {
+  max-width: 900px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.recalcSection {
+  margin-top: 16px;
+}
+
+.recalcSectionTitle {
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #0f172a;
+}
+
+.recalcTableWrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.recalcTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.recalcTable th,
+.recalcTable td {
+  padding: 6px 10px;
+  border-bottom: 1px solid #edf2f7;
+  text-align: left;
+  vertical-align: top;
+}
+
+.recalcTable th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.recalcTable td.num,
+.recalcTable th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .modalTitle {
   margin: 0 0 8px;
   font-size: 20px;

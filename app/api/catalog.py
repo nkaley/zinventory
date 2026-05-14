@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.composite_cost_logic import recalculate_composite_costs
 from app.db import get_db
 from app.models import CompositeItem, Item
 from app.schemas import (
+    CompositeCostRecalcResult,
     CompositeItemRead,
     ItemRead,
     PaginatedCompositesResponse,
@@ -12,6 +14,24 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+@router.post(
+    "/composites/recalculate-costs",
+    response_model=CompositeCostRecalcResult,
+)
+def recalculate_composite_costs_endpoint(
+    dry_run: bool = Query(default=True),
+    db: Session = Depends(get_db),
+) -> CompositeCostRecalcResult:
+    try:
+        result = recalculate_composite_costs(db, dry_run=dry_run)
+        return CompositeCostRecalcResult(**result)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Composite cost recalculation failed: {exc}",
+        ) from exc
 
 
 @router.get("/items", response_model=PaginatedItemsResponse)

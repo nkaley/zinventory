@@ -152,6 +152,45 @@ class CalculateResult(BaseModel):
     lines_count: int
 
 
+class CompositeCostChange(BaseModel):
+    composite_id: str
+    name: str
+    sku: str | None = None
+    current_purchase_rate: float
+    new_purchase_rate: float
+    delta: float
+
+
+class CompositeCostSkipped(BaseModel):
+    composite_id: str
+    name: str
+    sku: str | None = None
+    current_purchase_rate: float
+    computed_purchase_rate: float
+    reason: str
+
+
+class CompositeCostError(BaseModel):
+    composite_id: str
+    name: str
+    sku: str | None = None
+    current_purchase_rate: float | None = None
+    new_purchase_rate: float | None = None
+    delta: float | None = None
+    error: str
+
+
+class CompositeCostRecalcResult(BaseModel):
+    dry_run: bool
+    threshold: float
+    checked: int
+    skipped_no_change: int
+    to_update: list[CompositeCostChange] = []
+    skipped_unreliable: list[CompositeCostSkipped] = []
+    updated: list[CompositeCostChange] = []
+    errors: list[CompositeCostError] = []
+
+
 class PaginatedItemsResponse(BaseModel):
     total: int
     limit: int

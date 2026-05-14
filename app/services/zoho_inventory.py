@@ -1,11 +1,39 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 import requests
 
 from app.config import settings
+
+
+COMPOSITE_PUT_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+    {
+        "composite_item_id",
+        "created_time",
+        "last_modified_time",
+        "stock_on_hand",
+        "available_stock",
+        "actual_available_stock",
+        "actual_committed_stock",
+        "actual_available_for_sale_stock",
+        "committed_stock",
+        "available_for_sale_stock",
+        "status",
+        "source",
+        "image_name",
+        "image_type",
+        "image_document_id",
+        "documents",
+        "warehouses",
+        "track_serial_number",
+        "track_batch_number",
+        "package_details",
+    }
+)
 
 
 class ZohoInventoryClient:
@@ -143,3 +171,65 @@ class ZohoInventoryClient:
 
     def get_composite_item_details(self, composite_item_id: str) -> dict[str, Any]:
         return self._get(f"/compositeitems/{composite_item_id}")
+
+    def _put(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        url = f"{self.base_url}/{path.lstrip('/')}"
+        query = {"organization_id": self.organization_id}
+
+        attempts = 3
+        backoff_seconds = 1.0
+
+        last_response: requests.Response | None = None
+        for attempt in range(1, attempts + 1):
+            response = requests.put(
+                url,
+                headers=self._headers(),
+                params=query,
+                json=payload,
+                timeout=60,
+            )
+            last_response = response
+
+            if response.ok:
+                return response.json()
+
+            # Zoho rate limit: back off and retry.
+            if response.status_code == 429 and attempt < attempts:
+                time.sleep(backoff_seconds * attempt)
+                continue
+
+            break
+
+        assert last_response is not None
+        raise ValueError(
+            "Zoho PUT failed: "
+            f"status={last_response.status_code}, url={last_response.url}, "
+            f"body={last_response.text}"
+        )
+
+    def update_composite_item_purchase_rate(
+        self,
+        composite_item_id: str,
+        new_purchase_rate: Decimal | float,
+    ) -> dict[str, Any]:
+        details = self.get_composite_item_details(composite_item_id)
+        composite = details.get("composite_item") or {}
+        if not composite:
+            raise ValueError(
+                f"Composite item not found in Zoho: {composite_item_id}"
+            )
+
+        payload = {
+            key: value
+            for key, value in composite.items()
+            if key not in COMPOSITE_PUT_EXCLUDED_FIELDS
+        }
+
+        rate_as_float = (
+            float(new_purchase_rate)
+            if isinstance(new_purchase_rate, Decimal)
+            else float(new_purchase_rate)
+        )
+        payload["purchase_rate"] = rate_as_float
+
+        return self._put(f"/compositeitems/{composite_item_id}", payload)
