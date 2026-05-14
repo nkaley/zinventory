@@ -10,47 +10,44 @@ import requests
 from app.config import settings
 
 
-COMPOSITE_PUT_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+COMPOSITE_PUT_ALLOWED_FIELDS: frozenset[str] = frozenset(
     {
-        "composite_item_id",
-        "created_time",
-        "last_modified_time",
-        "stock_on_hand",
-        "available_stock",
-        "actual_available_stock",
-        "actual_committed_stock",
-        "actual_available_for_sale_stock",
-        "committed_stock",
-        "available_for_sale_stock",
+        "name",
+        "unit",
+        "description",
+        "purchase_description",
+        "item_type",
+        "product_type",
+        "is_combo_product",
         "status",
         "source",
-        "image_name",
-        "image_type",
-        "image_document_id",
-        "documents",
-        "warehouses",
-        "track_serial_number",
-        "track_batch_number",
-        "package_details",
-        "composite_service_items",
-        "composite_component_items",
-        "composite_combo_products",
-        "composite_inventory_items",
-        "composite_items_summary",
+        "sku",
+        "upc",
+        "ean",
+        "isbn",
+        "part_number",
+        "rate",
+        "pricebook_rate",
+        "purchase_rate",
+        "reorder_level",
+        "tax_id",
         "tax_name",
         "tax_percentage",
         "tax_type",
-        "label_rate",
-        "display_rate",
-        "account_name",
-        "inventory_account_name",
+        "item_tax_preferences",
+        "hsn_or_sac",
+        "purchase_account_id",
         "purchase_account_name",
-        "category_name",
-        "brand_name",
-        "manufacturer_name",
+        "account_id",
+        "account_name",
+        "inventory_account_id",
+        "inventory_account_name",
+        "vendor_id",
         "vendor_name",
-        "preferred_vendor_name",
-        "tags_summary",
+        "image_id",
+        "image_name",
+        "custom_fields",
+        "mapped_items",
     }
 )
 
@@ -241,7 +238,7 @@ class ZohoInventoryClient:
         payload = {
             key: value
             for key, value in composite.items()
-            if key not in COMPOSITE_PUT_EXCLUDED_FIELDS
+            if key in COMPOSITE_PUT_ALLOWED_FIELDS
         }
 
         rate_as_float = (
