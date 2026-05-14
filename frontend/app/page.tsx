@@ -37,6 +37,7 @@ type Report = {
   title: string;
   status: string;
   total_cost: string;
+  build_cost: string;
   created_at: string;
   updated_at: string;
   devices: ReportDevice[];
@@ -662,6 +663,9 @@ export default function HomePage() {
 
                   <div>Дата создания</div>
                   <div>{formatUtcPlus3(selectedReport.created_at)}</div>
+
+                  <div>Себестоимость сборки (руб.)</div>
+                  <div><strong>{formatRub(selectedReport.build_cost)}</strong></div>
 
                   <div>Итоговая сумма (руб.)</div>
                   <div><strong>{formatRub(selectedReport.total_cost)}</strong></div>

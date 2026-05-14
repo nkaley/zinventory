@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class HealthResponse(BaseModel):
@@ -90,6 +90,14 @@ class ReportRead(BaseModel):
     lines: list[ReportLineRead] = []
 
     model_config = {"from_attributes": True}
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def build_cost(self) -> Decimal:
+        total = Decimal("0")
+        for line in self.lines:
+            total += Decimal(line.rate) * Decimal(line.quantity)
+        return total
 
 
 class ItemRead(BaseModel):
