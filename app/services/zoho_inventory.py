@@ -40,6 +40,17 @@ COMPOSITE_PUT_EXCLUDED_FIELDS: frozenset[str] = frozenset(
         "tax_name",
         "tax_percentage",
         "tax_type",
+        "label_rate",
+        "display_rate",
+        "account_name",
+        "inventory_account_name",
+        "purchase_account_name",
+        "category_name",
+        "brand_name",
+        "manufacturer_name",
+        "vendor_name",
+        "preferred_vendor_name",
+        "tags_summary",
     }
 )
 
