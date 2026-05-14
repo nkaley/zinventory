@@ -6,6 +6,7 @@ from app.composite_cost_logic import recalculate_composite_costs
 from app.db import get_db
 from app.models import CompositeItem, Item
 from app.schemas import (
+    CompositeCostRecalcRequest,
     CompositeCostRecalcResult,
     CompositeItemRead,
     ItemRead,
@@ -21,12 +22,27 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
     response_model=CompositeCostRecalcResult,
 )
 def recalculate_composite_costs_endpoint(
+    payload: CompositeCostRecalcRequest | None = None,
     dry_run: bool = Query(default=True),
     db: Session = Depends(get_db),
 ) -> CompositeCostRecalcResult:
+    composite_ids = payload.composite_ids if payload else None
+
+    if not dry_run and not composite_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="composite_ids must be a non-empty list when dry_run=false",
+        )
+
     try:
-        result = recalculate_composite_costs(db, dry_run=dry_run)
+        result = recalculate_composite_costs(
+            db,
+            dry_run=dry_run,
+            composite_ids=composite_ids,
+        )
         return CompositeCostRecalcResult(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,

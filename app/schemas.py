@@ -152,32 +152,27 @@ class CalculateResult(BaseModel):
     lines_count: int
 
 
-class CompositeCostChange(BaseModel):
+class CompositeCostZeroComponent(BaseModel):
+    zoho_item_id: str
+    name: str
+    sku: str | None = None
+    quantity: float
+
+
+class CompositeCostCandidate(BaseModel):
     composite_id: str
     name: str
     sku: str | None = None
     current_purchase_rate: float
     new_purchase_rate: float
     delta: float
+    zero_rate_components: list[CompositeCostZeroComponent] = []
+    status: str | None = None
+    error: str | None = None
 
 
-class CompositeCostSkipped(BaseModel):
-    composite_id: str
-    name: str
-    sku: str | None = None
-    current_purchase_rate: float
-    computed_purchase_rate: float
-    reason: str
-
-
-class CompositeCostError(BaseModel):
-    composite_id: str
-    name: str
-    sku: str | None = None
-    current_purchase_rate: float | None = None
-    new_purchase_rate: float | None = None
-    delta: float | None = None
-    error: str
+class CompositeCostRecalcRequest(BaseModel):
+    composite_ids: list[str] | None = None
 
 
 class CompositeCostRecalcResult(BaseModel):
@@ -185,10 +180,8 @@ class CompositeCostRecalcResult(BaseModel):
     threshold: float
     checked: int
     skipped_no_change: int
-    to_update: list[CompositeCostChange] = []
-    skipped_unreliable: list[CompositeCostSkipped] = []
-    updated: list[CompositeCostChange] = []
-    errors: list[CompositeCostError] = []
+    skipped_empty_bom: int
+    candidates: list[CompositeCostCandidate] = []
 
 
 class PaginatedItemsResponse(BaseModel):

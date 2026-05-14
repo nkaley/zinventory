@@ -24,7 +24,7 @@ def _quantize(value: Decimal) -> Decimal:
 def _compute_new_purchase_rate(
     db: Session,
     composite: CompositeItem,
-) -> tuple[Decimal, bool, bool]:
+) -> tuple[Decimal, list[dict[str, Any]], bool]:
     totals: dict[str, Decimal] = {}
     related: dict[str, list[str]] = {}
 
@@ -37,10 +37,10 @@ def _compute_new_purchase_rate(
     )
 
     if not totals:
-        return Decimal("0"), True, True
+        return Decimal("0"), [], True
 
     new_rate = Decimal("0")
-    has_zero_leaf = False
+    zero_components: list[dict[str, Any]] = []
 
     for zoho_item_id, qty in totals.items():
         item = db.execute(
@@ -49,11 +49,18 @@ def _compute_new_purchase_rate(
 
         rate = _d(item.rate) if item is not None else Decimal("0")
         if rate <= 0:
-            has_zero_leaf = True
+            zero_components.append(
+                {
+                    "zoho_item_id": zoho_item_id,
+                    "name": item.name if item is not None else "",
+                    "sku": item.sku if item is not None else None,
+                    "quantity": float(qty),
+                }
+            )
 
         new_rate += rate * qty
 
-    return new_rate, has_zero_leaf, False
+    return new_rate, zero_components, False
 
 
 def _current_purchase_rate(composite: CompositeItem) -> Decimal:
@@ -61,7 +68,12 @@ def _current_purchase_rate(composite: CompositeItem) -> Decimal:
     return _d(raw.get("purchase_rate"))
 
 
-def _change_entry(composite: CompositeItem, old: Decimal, new: Decimal) -> dict[str, Any]:
+def _candidate_entry(
+    composite: CompositeItem,
+    old: Decimal,
+    new: Decimal,
+    zero_components: list[dict[str, Any]],
+) -> dict[str, Any]:
     return {
         "composite_id": composite.zoho_composite_item_id,
         "name": composite.name,
@@ -69,22 +81,9 @@ def _change_entry(composite: CompositeItem, old: Decimal, new: Decimal) -> dict[
         "current_purchase_rate": float(_quantize(old)),
         "new_purchase_rate": float(_quantize(new)),
         "delta": float(_quantize(new - old)),
-    }
-
-
-def _skipped_entry(
-    composite: CompositeItem,
-    old: Decimal,
-    new: Decimal,
-    reason: str,
-) -> dict[str, Any]:
-    return {
-        "composite_id": composite.zoho_composite_item_id,
-        "name": composite.name,
-        "sku": composite.sku,
-        "current_purchase_rate": float(_quantize(old)),
-        "computed_purchase_rate": float(_quantize(new)),
-        "reason": reason,
+        "zero_rate_components": zero_components,
+        "status": None,
+        "error": None,
     }
 
 
@@ -92,6 +91,7 @@ def recalculate_composite_costs(
     db: Session,
     *,
     dry_run: bool,
+    composite_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     composites = (
         db.execute(
@@ -101,65 +101,125 @@ def recalculate_composite_costs(
         .all()
     )
 
-    to_update: list[dict[str, Any]] = []
-    updated: list[dict[str, Any]] = []
-    skipped_unreliable: list[dict[str, Any]] = []
-    skipped_no_change = 0
-    errors: list[dict[str, Any]] = []
+    if not dry_run:
+        if not composite_ids:
+            raise ValueError(
+                "composite_ids must be a non-empty list when dry_run=false"
+            )
+        selected_ids = set(composite_ids)
+    else:
+        selected_ids = None
 
-    client: ZohoInventoryClient | None = None if dry_run else ZohoInventoryClient()
+    candidates: list[dict[str, Any]] = []
+    skipped_no_change = 0
+    skipped_empty_bom = 0
+
+    if dry_run:
+        for composite in composites:
+            try:
+                new_rate, zero_components, empty_bom = _compute_new_purchase_rate(
+                    db, composite
+                )
+            except Exception as exc:
+                candidates.append(
+                    {
+                        "composite_id": composite.zoho_composite_item_id,
+                        "name": composite.name,
+                        "sku": composite.sku,
+                        "current_purchase_rate": float(
+                            _quantize(_current_purchase_rate(composite))
+                        ),
+                        "new_purchase_rate": float(
+                            _quantize(_current_purchase_rate(composite))
+                        ),
+                        "delta": 0.0,
+                        "zero_rate_components": [],
+                        "status": "error",
+                        "error": f"compute failed: {exc}",
+                    }
+                )
+                continue
+
+            if empty_bom:
+                skipped_empty_bom += 1
+                continue
+
+            old_rate = _current_purchase_rate(composite)
+            delta = _quantize(new_rate) - _quantize(old_rate)
+
+            if abs(delta) < COST_DELTA_THRESHOLD:
+                skipped_no_change += 1
+                continue
+
+            candidates.append(
+                _candidate_entry(composite, old_rate, new_rate, zero_components)
+            )
+
+        return {
+            "dry_run": True,
+            "threshold": float(COST_DELTA_THRESHOLD),
+            "checked": len(composites),
+            "skipped_no_change": skipped_no_change,
+            "skipped_empty_bom": skipped_empty_bom,
+            "candidates": candidates,
+        }
+
+    client = ZohoInventoryClient()
     needs_delay = False
 
-    for composite in composites:
-        try:
-            new_rate, has_zero_leaf, empty_bom = _compute_new_purchase_rate(
-                db, composite
-            )
-        except Exception as exc:
-            errors.append(
+    composites_by_zoho_id: dict[str, CompositeItem] = {
+        c.zoho_composite_item_id: c for c in composites
+    }
+
+    for zoho_id in composite_ids or []:
+        composite = composites_by_zoho_id.get(zoho_id)
+        if composite is None:
+            candidates.append(
                 {
-                    "composite_id": composite.zoho_composite_item_id,
-                    "name": composite.name,
-                    "sku": composite.sku,
-                    "current_purchase_rate": None,
-                    "new_purchase_rate": None,
-                    "delta": None,
-                    "error": f"compute failed: {exc}",
+                    "composite_id": zoho_id,
+                    "name": "",
+                    "sku": None,
+                    "current_purchase_rate": 0.0,
+                    "new_purchase_rate": 0.0,
+                    "delta": 0.0,
+                    "zero_rate_components": [],
+                    "status": "error",
+                    "error": "Composite not found in local DB",
                 }
             )
             continue
 
+        try:
+            new_rate, zero_components, empty_bom = _compute_new_purchase_rate(
+                db, composite
+            )
+        except Exception as exc:
+            candidates.append(
+                _candidate_entry(
+                    composite,
+                    _current_purchase_rate(composite),
+                    _current_purchase_rate(composite),
+                    [],
+                )
+                | {"status": "error", "error": f"compute failed: {exc}"}
+            )
+            continue
+
         old_rate = _current_purchase_rate(composite)
-        new_rate_q = _quantize(new_rate)
-        old_rate_q = _quantize(old_rate)
-        delta = new_rate_q - old_rate_q
 
         if empty_bom:
-            skipped_unreliable.append(
-                _skipped_entry(composite, old_rate, new_rate, "empty_bom")
-            )
+            entry = _candidate_entry(composite, old_rate, old_rate, [])
+            entry["status"] = "error"
+            entry["error"] = "Empty BOM"
+            candidates.append(entry)
             continue
 
-        if has_zero_leaf:
-            skipped_unreliable.append(
-                _skipped_entry(composite, old_rate, new_rate, "zero_rate_leaf")
-            )
-            continue
-
-        if abs(delta) < COST_DELTA_THRESHOLD:
-            skipped_no_change += 1
-            continue
-
-        entry = _change_entry(composite, old_rate, new_rate)
-        to_update.append(entry)
-
-        if dry_run:
-            continue
+        entry = _candidate_entry(composite, old_rate, new_rate, zero_components)
+        new_rate_q = _quantize(new_rate)
 
         try:
             if needs_delay:
                 time.sleep(ZOHO_PUT_DELAY_SECONDS)
-            assert client is not None
             response = client.update_composite_item_purchase_rate(
                 composite.zoho_composite_item_id,
                 new_rate_q,
@@ -173,20 +233,20 @@ def recalculate_composite_costs(
             new_raw["purchase_rate"] = float(new_rate_q)
             composite.raw_json = new_raw
 
-            updated.append(entry)
+            entry["status"] = "updated"
         except Exception as exc:
-            errors.append({**entry, "error": str(exc)})
+            entry["status"] = "error"
+            entry["error"] = str(exc)
 
-    if not dry_run:
-        db.commit()
+        candidates.append(entry)
+
+    db.commit()
 
     return {
-        "dry_run": dry_run,
+        "dry_run": False,
         "threshold": float(COST_DELTA_THRESHOLD),
-        "checked": len(composites),
-        "skipped_no_change": skipped_no_change,
-        "to_update": to_update,
-        "skipped_unreliable": skipped_unreliable,
-        "updated": updated,
-        "errors": errors,
+        "checked": len(composite_ids or []),
+        "skipped_no_change": 0,
+        "skipped_empty_bom": 0,
+        "candidates": candidates,
     }
