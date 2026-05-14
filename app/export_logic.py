@@ -56,6 +56,7 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
         "Rate",
         "Stock_Available",
         "Quantity",
+        "Build Cost",
         "Qty TBO",
         "Total Cost",
         "Related Composite",
@@ -73,7 +74,9 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
         cell.font = header_font
         cell.alignment = wrap_alignment
 
-    for line in report.lines:
+    first_data_row = 2
+    for row_offset, line in enumerate(report.lines):
+        excel_row = first_data_row + row_offset
         ws.append(
             [
                 _safe_text(line.item_name),
@@ -84,11 +87,36 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
                 _safe_decimal(line.rate),
                 _safe_decimal(line.stock_available),
                 _safe_decimal(line.quantity),
+                f"=F{excel_row}*H{excel_row}",
                 _safe_decimal(line.qty_tbo),
                 _safe_decimal(line.total_cost),
                 _safe_text(line.related_composite),
             ]
         )
+
+    last_data_row = ws.max_row
+    has_data_rows = last_data_row >= first_data_row
+
+    if has_data_rows:
+        totals_row = last_data_row + 1
+        ws.cell(row=totals_row, column=1, value="Итого")
+        ws.cell(
+            row=totals_row,
+            column=9,
+            value=f"=SUM(I{first_data_row}:I{last_data_row})",
+        )
+        ws.cell(
+            row=totals_row,
+            column=11,
+            value=f"=SUM(K{first_data_row}:K{last_data_row})",
+        )
+
+        totals_font = Font(bold=True)
+        totals_fill = PatternFill(fill_type="solid", fgColor="F2F2F2")
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=totals_row, column=col_idx)
+            cell.font = totals_font
+            cell.fill = totals_fill
 
     widths = {
         "A": 45,
@@ -99,19 +127,22 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
         "F": 12,
         "G": 16,
         "H": 12,
-        "I": 12,
-        "J": 14,
-        "K": 40,
+        "I": 16,
+        "J": 12,
+        "K": 14,
+        "L": 40,
     }
 
     for col_letter, width in widths.items():
         ws.column_dimensions[col_letter].width = width
 
-    numeric_cols_2 = ["F", "G", "J"]
-    numeric_cols_4 = ["H", "I"]
+    numeric_cols_2 = ["F", "G", "I", "K"]
+    numeric_cols_4 = ["H", "J"]
+    wrap_cols = ["A", "B", "C", "D", "E", "L"]
 
-    for row in range(2, ws.max_row + 1):
-        for col in ["A", "B", "C", "D", "E", "K"]:
+    styled_last_row = ws.max_row
+    for row in range(first_data_row, styled_last_row + 1):
+        for col in wrap_cols:
             ws[f"{col}{row}"].alignment = wrap_alignment
 
         for col in numeric_cols_2:
@@ -121,7 +152,10 @@ def export_report_xlsx(db: Session, report_id: int) -> tuple[BytesIO, str]:
             ws[f"{col}{row}"].number_format = "0.0000"
 
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{ws.max_row}"
+    ws.auto_filter.ref = (
+        f"A1:{get_column_letter(ws.max_column)}"
+        f"{last_data_row if has_data_rows else 1}"
+    )
 
     output = BytesIO()
     wb.save(output)
