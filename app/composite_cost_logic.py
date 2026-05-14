@@ -231,6 +231,8 @@ def recalculate_composite_costs(
             if updated_composite:
                 new_raw.update(updated_composite)
             new_raw["purchase_rate"] = float(new_rate_q)
+            new_raw["rate"] = float(new_rate_q)
+            new_raw["pricebook_rate"] = float(new_rate_q)
             composite.raw_json = new_raw
 
             entry["status"] = "updated"

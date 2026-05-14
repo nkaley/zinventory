@@ -247,5 +247,7 @@ class ZohoInventoryClient:
             else float(new_purchase_rate)
         )
         payload["purchase_rate"] = rate_as_float
+        payload["rate"] = rate_as_float
+        payload["pricebook_rate"] = rate_as_float
 
         return self._put(f"/compositeitems/{composite_item_id}", payload)
