@@ -32,6 +32,14 @@ COMPOSITE_PUT_EXCLUDED_FIELDS: frozenset[str] = frozenset(
         "track_serial_number",
         "track_batch_number",
         "package_details",
+        "composite_service_items",
+        "composite_component_items",
+        "composite_combo_products",
+        "composite_inventory_items",
+        "composite_items_summary",
+        "tax_name",
+        "tax_percentage",
+        "tax_type",
     }
 )
 

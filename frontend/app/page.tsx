@@ -1106,14 +1106,13 @@ export default function HomePage() {
         >
           <div className="modalCard">
             <h3 id="apply-costs-title" className="modalTitle">
-              Обновить выбранные сборки в Zoho?
+              Обновить себестоимость в Zoho?
             </h3>
             <p className="modalText">
-              Будет записан новый <code>purchase_rate</code> в Zoho для{" "}
+              Будет обновлена себестоимость для{" "}
               <strong>{costSelectedIds.size}</strong>{" "}
-              {costSelectedIds.size === 1 ? "сборки" : "сборок"}. Операция
-              использует Zoho API (по 2 запроса на сборку) и может занять
-              несколько минут.
+              {costSelectedIds.size === 1 ? "сборки" : "сборок"}. Это может
+              занять несколько минут — не закрывайте страницу.
             </p>
             <div className="modalActions">
               <button
