@@ -296,11 +296,16 @@ export default function HomePage() {
       return;
     }
 
-    const nextDrafts: Record<number, string> = {};
-    for (const device of selectedReport.devices) {
-      nextDrafts[device.id] = String(device.qty);
-    }
-    setDeviceQtyDrafts(nextDrafts);
+    // Preserve user-edited drafts across report refreshes (e.g. after adding
+    // another device). Only initialize entries for devices we haven't seen
+    // yet, and drop drafts for devices that no longer exist.
+    setDeviceQtyDrafts((prev) => {
+      const next: Record<number, string> = {};
+      for (const device of selectedReport.devices) {
+        next[device.id] = prev[device.id] ?? String(device.qty);
+      }
+      return next;
+    });
   }, [selectedReport]);
 
   useEffect(() => {
